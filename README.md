@@ -1,8 +1,5 @@
 # instalar libreria
 > pip install pynput
-
-
-# Documentacion
 # DOCUMENTACIÓN - SIMULACIÓN DE KEYLOGGER EN VLAN
 
 ## Objetivo del Proyecto
